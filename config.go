@@ -22,6 +22,7 @@ type Config struct {
 	Server   string
 	Port     int
 	BaseDN   string
+	SearchDN []string
 	Security SecurityType
 }
 

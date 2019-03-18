@@ -8,56 +8,82 @@ import (
 
 //Search returns the entries for the given search criteria or an error if one occurred.
 func (c *Conn) Search(filter string, attrs []string, sizeLimit int) ([]*ldap.Entry, error) {
-	search := ldap.NewSearchRequest(
-		c.Config.BaseDN,
-		ldap.ScopeWholeSubtree,
-		ldap.DerefAlways,
-		sizeLimit,
-		0,
-		false,
-		filter,
-		attrs,
-		nil,
-	)
-	result, err := c.Conn.Search(search)
-	if err != nil {
-		return nil, fmt.Errorf(`Search error "%s": %v`, filter, err)
+	answer := []*ldap.Entry{}
+	searches := []string{c.Config.BaseDN}
+	if c.Config.SearchDN != nil {
+		searches = c.Config.SearchDN
 	}
 
-	return result.Entries, nil
+	var terr error
+	for _, s := range searches {
+		search := ldap.NewSearchRequest(
+			s,
+			ldap.ScopeWholeSubtree,
+			ldap.DerefAlways,
+			sizeLimit,
+			0,
+			false,
+			filter,
+			attrs,
+			nil,
+		)
+		result, err := c.Conn.Search(search)
+		if err != nil {
+			terr = fmt.Errorf(`Search error "%s": %v`, filter, err)
+		}
+		answer = append(answer, result.Entries...)
+	}
+
+	// If found no answers and have an error, return it
+	if len(answer) == 0 && terr != nil {
+		return nil, terr
+	}
+
+	return answer, nil
 }
 
 //SearchOne returns the single entry for the given search criteria or an error if one occurred.
 //An error is returned if exactly one entry is not returned.
 func (c *Conn) SearchOne(filter string, attrs []string) (*ldap.Entry, error) {
-	search := ldap.NewSearchRequest(
-		c.Config.BaseDN,
-		ldap.ScopeWholeSubtree,
-		ldap.DerefAlways,
-		1,
-		0,
-		false,
-		filter,
-		attrs,
-		nil,
-	)
+	searches := []string{c.Config.BaseDN}
+	if c.Config.SearchDN != nil {
+		searches = c.Config.SearchDN
+	}
+	var terr error
+	for _, s := range searches {
+		search := ldap.NewSearchRequest(
+			s,
+			ldap.ScopeWholeSubtree,
+			ldap.DerefAlways,
+			1,
+			0,
+			false,
+			filter,
+			attrs,
+			nil,
+		)
 
-	result, err := c.Conn.Search(search)
-	if err != nil {
-		if e, ok := err.(*ldap.Error); ok {
-			if e.ResultCode == ldap.LDAPResultSizeLimitExceeded {
-				return nil, fmt.Errorf(`Search error "%s": more than one entries returned`, filter)
+		result, err := c.Conn.Search(search)
+		if err != nil {
+			if e, ok := err.(*ldap.Error); ok {
+				if e.ResultCode == ldap.LDAPResultSizeLimitExceeded {
+					terr = fmt.Errorf(`Search error "%s": more than one entries returned`, filter)
+					continue
+				}
 			}
+
+			terr = fmt.Errorf(`Search error "%s": %v`, filter, err)
+			continue
 		}
 
-		return nil, fmt.Errorf(`Search error "%s": %v`, filter, err)
-	}
+		if len(result.Entries) == 0 {
+			terr = fmt.Errorf(`Search error "%s": no entries returned`, filter)
+			continue
+		}
 
-	if len(result.Entries) == 0 {
-		return nil, fmt.Errorf(`Search error "%s": no entries returned`, filter)
+		return result.Entries[0], nil
 	}
-
-	return result.Entries[0], nil
+	return nil, terr
 }
 
 //GetDN returns the DN for the object with the given attribute value or an error if one occurred.
