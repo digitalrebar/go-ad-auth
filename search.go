@@ -14,7 +14,7 @@ func (c *Conn) Search(filter string, attrs []string, sizeLimit int) ([]*ldap.Ent
 		searches = c.Config.SearchDN
 	}
 
-	var terr error
+	terr := &AggregatingError{}
 	for _, s := range searches {
 		search := ldap.NewSearchRequest(
 			s,
@@ -29,7 +29,8 @@ func (c *Conn) Search(filter string, attrs []string, sizeLimit int) ([]*ldap.Ent
 		)
 		result, err := c.Conn.Search(search)
 		if err != nil {
-			terr = fmt.Errorf(`Search error "%s": %v`, filter, err)
+			terr.Errorf(`Search error "%s": %v`, filter, err)
+			continue
 		}
 		answer = append(answer, result.Entries...)
 	}
@@ -49,7 +50,7 @@ func (c *Conn) SearchOne(filter string, attrs []string) (*ldap.Entry, error) {
 	if c.Config.SearchDN != nil {
 		searches = c.Config.SearchDN
 	}
-	var terr error
+	terr := &AggregatingError{}
 	for _, s := range searches {
 		search := ldap.NewSearchRequest(
 			s,
@@ -67,17 +68,17 @@ func (c *Conn) SearchOne(filter string, attrs []string) (*ldap.Entry, error) {
 		if err != nil {
 			if e, ok := err.(*ldap.Error); ok {
 				if e.ResultCode == ldap.LDAPResultSizeLimitExceeded {
-					terr = fmt.Errorf(`Search error "%s": more than one entries returned`, filter)
+					terr.Errorf(`Search error "%s": more than one entries returned`, filter)
 					continue
 				}
 			}
 
-			terr = fmt.Errorf(`Search error "%s": %v`, filter, err)
+			terr.Errorf(`Search error "%s": %v`, filter, err)
 			continue
 		}
 
 		if len(result.Entries) == 0 {
-			terr = fmt.Errorf(`Search error "%s": no entries returned`, filter)
+			terr.Errorf(`Search error "%s": no entries returned`, filter)
 			continue
 		}
 

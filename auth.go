@@ -57,9 +57,19 @@ func AuthenticateExtended(config *Config, username, password string, attrs, grou
 		attrs = append(attrs, "memberOf")
 	}
 
-	//get entry
-	entry, err = conn.GetAttributes("userPrincipalName", upn, attrs)
+	//get entry - try all possible UPNs
+	upns, err := config.UPNs(username)
 	if err != nil {
+		return false, nil, nil, err
+	}
+	for _, tupn := range upns {
+		entry, err = conn.GetAttributes("userPrincipalName", tupn, attrs)
+		if err != nil {
+			continue
+		}
+		break
+	}
+	if entry == nil {
 		return false, nil, nil, err
 	}
 
